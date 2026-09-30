@@ -15,3 +15,7 @@ Export video opens resolution (540/720/1080), video quality and audio bitrate (1
 ## Soundframe branding
 
 Soundframe · Turn sound into stories. The app icon is an SVG frame containing three audio bars, shared by the header and favicon. SAVI remains the supplied episode template. The existing repository and live URL remain compatible with existing bookmarks.
+
+## New address
+
+The current Soundframe app is published at https://creative-innovation-labs-bmc.github.io/soundframe/ from creative-innovation-labs-bmc/soundframe. Future website updates should go there. The older /savi-audiogram/ address remains available.
