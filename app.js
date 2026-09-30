@@ -1,7 +1,7 @@
 import {parseTime,stamp,parseSrt,toSrt,activeCue,defaults,layouts,validateSettings} from './core.js';
-import {analyseEnvelope, verticalBarLevels} from './waveform.js';
+import {analyseEnvelope, analyseBands, spectrumBarLevels} from './waveform.js?v=1.3';
 import {sanitiseTrack,mixTracks,encodeWav} from './mixer.js';
-const $=id=>document.getElementById(id),canvas=$('canvas'),ctx=canvas.getContext('2d');let settings={...defaults},cues=[],audioFile=null,audioUrl=null,audioBuffer=null,envelope=[],logoData=null,logo=new Image(),audioCtx,source,previewGain,recordDest,recorder,exporting=false,cancelled=false,lastActive=null,videoUrl=null,loading=false;const audio=new Audio();audio.preload='auto';logo.src='savi-logo.png';const settingsKeys=Object.keys(defaults);let dirty=false;function invalidateVideo(){dirty=true;$('downloadVideo').hidden=true;}const status=(s,error=false)=>{$('status').textContent=s;$('status').classList.toggle('error',error)};const timeLabel=t=>{const seconds=Math.floor(Math.max(0,t)+0.001);return `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`};const duration=()=>Number.isFinite(audio.duration)?audio.duration:0;
+const $=id=>document.getElementById(id),canvas=$('canvas'),ctx=canvas.getContext('2d');let settings={...defaults},cues=[],audioFile=null,audioUrl=null,audioBuffer=null,envelope=[],spectrum=null,logoData=null,logo=new Image(),audioCtx,source,previewGain,recordDest,recorder,exporting=false,cancelled=false,lastActive=null,videoUrl=null,loading=false;const audio=new Audio();audio.preload='auto';logo.src='savi-logo.png';const settingsKeys=Object.keys(defaults);let dirty=false;function invalidateVideo(){dirty=true;$('downloadVideo').hidden=true;}const status=(s,error=false)=>{$('status').textContent=s;$('status').classList.toggle('error',error)};const timeLabel=t=>{const seconds=Math.floor(Math.max(0,t)+0.001);return `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`};const duration=()=>Number.isFinite(audio.duration)?audio.duration:0;
 function syncControls(){invalidateVideo();for(const k of settingsKeys){const el=$(k);if(el.type==='checkbox')el.checked=settings[k];else el.value=settings[k];const out=$(k+'Out');if(out)out.value=settings[k]+(['titleSize','captionSize'].includes(k)?'':'%')}const [w,h]=settings.format==='landscape'?[1920,1080]:settings.format==='portrait'?[1080,1920]:[1080,1080];canvas.width=w;canvas.height=h;$('dimensions').textContent=`${w} × ${h}`}
 for(const k of settingsKeys)$(k).addEventListener('input',()=>{settings[k]=$(k).type==='checkbox'?$(k).checked:$(k).type==='range'?+$(k).value:$(k).value;if(k==='format')Object.assign(settings,layouts[settings.format]);syncControls()});
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(t=>{t.classList.toggle('active',t===b);t.setAttribute('aria-selected',String(t===b))});document.querySelectorAll('.tab-panel').forEach(p=>p.hidden=p.id!==b.dataset.tab)});
@@ -25,7 +25,7 @@ async function rebuildMix(){
  const previousTime=audio.currentTime||0,resume=!audio.paused;audio.pause();setMixLock(true);invalidateVideo();
  let nextUrl=null;
  try{
-  $('mixStatus').textContent='Updating audio mix…';
+  $('mixStatus').textContent='Updating audio mix and analysing waveform…';
   await new Promise(resolve=>setTimeout(resolve,0));
   const tracks=[primaryTrack,...backgroundTracks];
   const mixed=mixTracks(tracks.map(track=>({...track,samples:samplesOf(track.buffer),startFrame:Math.round(track.offset*audioCtx.sampleRate)})),primaryTrack.buffer.length,2);
@@ -40,6 +40,7 @@ async function rebuildMix(){
   if(audioUrl)URL.revokeObjectURL(audioUrl);audioUrl=nextUrl;nextUrl=null;
   audioFile=primaryTrack.file;audioBuffer=primaryTrack.buffer;
   envelope=analyseEnvelope(mixed.samples,audioCtx.sampleRate);
+  spectrum=await analyseBands(mixed.samples,audioCtx.sampleRate);
   $('audioName').textContent=primaryTrack.file.name;$('play').disabled=false;$('seek').disabled=false;$('timelineEmpty').hidden=true;
   drawTimeline();renderTracks();audio.currentTime=Math.min(previousTime,duration());
   $('mixStatus').textContent=mixed.reduction<1?`Mix ready · Peak protection reduced the output by ${(-20*Math.log10(mixed.reduction)).toFixed(1)} dB to prevent distortion.`:'Mix ready · Preview and export use these exact track levels.';
@@ -110,7 +111,7 @@ function paint(t){const w=canvas.width,h=canvas.height,u=Math.min(w,h)/1080;ctx.
  if(text){const cx=w*settings.captionX/100,cy=h*settings.captionY/100,cw=Math.min(w*.96-cx,w*settings.captionWidth/100),ch=Math.max(60,h*.77-cy);let fs=settings.captionSize*u,lines=captionLines(text,fs,cw);while((lines.length*fs*1.2>ch||lines.some(l=>l.reduce((s,q)=>s+q.width,0)+Math.max(0,l.length-1)*ctx.measureText(' ').width>cw))&&fs>14){fs--;lines=captionLines(text,fs,cw)}const words=lines.flat().length,highlight=cue?Math.min(words-1,Math.floor((t-cue.start)/(cue.end-cue.start)*words)):2;ctx.font=`${fs}px "${settings.font}"`;lines.forEach((line,i)=>{let tx=cx;for(const item of line){ctx.fillStyle=settings.highlight==='line'||settings.highlight==='word'&&item.index===highlight?settings.accent:settings.fg;ctx.fillText(item.word,tx,cy+i*fs*1.2);tx+=item.width+ctx.measureText(' ').width}})}
  const base=h*(settings.progress ? .942 : 1),wh=h*settings.waveHeight/100,bars=Math.floor(w/(8*u));
  if(settings.waveStyle!=='none'){
-   const values=verticalBarLevels(envelope.length?envelope:[.65],envelope.length?t:0,bars);
+   const values=spectrumBarLevels(spectrum,envelope,t,bars);
    ctx.fillStyle=settings.accent;ctx.strokeStyle=settings.accent;ctx.lineWidth=3*u;ctx.beginPath();
    for(let i=0;i<bars;i++){
      const bh=Math.max(2*u,wh*values[i]),bx=i*w/bars;
@@ -158,7 +159,7 @@ $('projectFile').onchange=async e=>{
   audio.pause();primaryTrack=restoredPrimary;backgroundTracks=restoredLayers;
   settings=validateSettings(p.settings);cues=validated;logo=newLogo;logoData=p.logo||null;$('logoThumb').src=logo.src;
   if(primaryTrack){audio.currentTime=0;await rebuildMix()}
-  else{audio.removeAttribute('src');audio.load();if(audioUrl)URL.revokeObjectURL(audioUrl);audioUrl=null;audioFile=null;audioBuffer=null;envelope=[];$('audioName').textContent='MP3, WAV, M4A or audio from MP4';$('play').disabled=true;$('seek').disabled=true;$('timelineEmpty').hidden=false;drawTimeline();$('mixStatus').textContent='Upload your podcast to hear the mix.'}
+  else{audio.removeAttribute('src');audio.load();if(audioUrl)URL.revokeObjectURL(audioUrl);audioUrl=null;audioFile=null;audioBuffer=null;envelope=[];spectrum=null;$('audioName').textContent='MP3, WAV, M4A or audio from MP4';$('play').disabled=true;$('seek').disabled=true;$('timelineEmpty').hidden=false;drawTimeline();$('mixStatus').textContent='Upload your podcast to hear the mix.'}
   syncControls();renderCues();renderTracks();$('srtName').textContent=cues.length+' captions from project';status('Project opened with all audio layers.');warnCaptions();
  }catch(e){status('Could not open project: '+e.message,true)}finally{setMixLock(false);e.target.value=''}
 };
