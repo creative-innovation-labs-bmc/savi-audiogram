@@ -1,3 +1,4 @@
+import {exportConfig,chooseExportType} from './export-settings.js?v=1.4';
 import {parseTime,stamp,parseSrt,toSrt,activeCue,defaults,layouts,validateSettings} from './core.js';
 import {analyseEnvelope, analyseBands, spectrumBarLevels} from './waveform.js?v=1.3';
 import {sanitiseTrack,mixTracks,encodeWav} from './mixer.js';
@@ -163,7 +164,11 @@ $('projectFile').onchange=async e=>{
   syncControls();renderCues();renderTracks();$('srtName').textContent=cues.length+' captions from project';status('Project opened with all audio layers.');warnCaptions();
  }catch(e){status('Could not open project: '+e.message,true)}finally{setMixLock(false);e.target.value=''}
 };
-function exportType(){if(!window.MediaRecorder)return null;return ['video/mp4','video/mp4;codecs=avc1.42002a,mp4a.40.2','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(t=>MediaRecorder.isTypeSupported(t))}
+function exportType(){return window.MediaRecorder?chooseExportType($('exportContainer').value,t=>MediaRecorder.isTypeSupported(t)):null}
+function selectedExport(){return exportConfig({resolution:$('exportResolution').value,quality:$('exportQuality').value,audio:$('exportAudio').value},settings.format,duration())}
+function updateExportEstimate(){const o=selectedExport(),mime=exportType();$('exportEstimate').textContent=`${o.width} × ${o.height} · 30 fps · ${(o.video/1e6).toFixed(1)} Mbps video · ${Math.round(o.audio/1000)} kbps audio · approximately ${o.estimatedMB.toFixed(1)} MB. ${mime?(mime.startsWith('video/mp4')?'MP4 with AAC audio.':'WebM with Opus audio.'):'This format is unavailable in your browser. Choose Automatic or WebM.'}`;$('startExport').disabled=!mime}
+for(const id of ['exportResolution','exportQuality','exportAudio','exportContainer'])$(id).onchange=updateExportEstimate;
+$('closeExport').onclick=()=>$('exportDialog').close();
 function setExportLock(locked){
   exporting=locked;
   document.body.classList.toggle('exporting',locked);
@@ -190,22 +195,23 @@ async function exportVideo(){
   if(exporting)return;
   if(loading||mixing){status('Wait until your audio has finished loading.',true);return}
   if(!audioFile||!duration()){status('Upload audio before exporting.',true);return}
-  const mime=exportType();
+  const mime=exportType(),options=selectedExport();
   if(!mime||!canvas.captureStream){status('Video export is unavailable in this browser. Try current Chrome or Edge.',true);return}
   if(cues.some(c=>!c.text.trim())){status('Remove empty captions or add text before exporting.',true);return}
   if(document.hidden){status('Keep this tab visible during export.',true);return}
   let stream,wakeLock,watchdog,oldTime=audio.currentTime,oldMuted=audio.muted;
+  const originalWidth=canvas.width,originalHeight=canvas.height;
   let exportError=null;
   const onError=()=>{exportError=new Error('Audio playback failed during export.');cancelExport(exportError.message)};
-  cancelled=false;cancelReason='';setExportLock(true);
+  cancelled=false;cancelReason='';$('exportDialog').close();setExportLock(true);
   try{
     await ensureAudio();audio.pause();await seekToStart();
     audio.muted=false;previewGain.gain.value=oldMuted?0:1;
-    paint(0);
+    canvas.width=options.width;canvas.height=options.height;paint(0);
     recordDest=audioCtx.createMediaStreamDestination();source.connect(recordDest);
     stream=canvas.captureStream(30);
     for(const track of recordDest.stream.getAudioTracks())stream.addTrack(track);
-    recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8000000,audioBitsPerSecond:192000});
+    recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:options.video,audioBitsPerSecond:options.audio});
     const chunks=[];
     recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
     const finished=new Promise(resolve=>{
@@ -241,11 +247,13 @@ async function exportVideo(){
     if(recordDest)source.disconnect(recordDest);
     stream?.getTracks().forEach(t=>t.stop());recordDest=null;recorder=null;
     audio.muted=oldMuted;if(previewGain)previewGain.gain.value=1;
-    audio.currentTime=Math.min(oldTime,duration());setExportLock(false);
+    canvas.width=originalWidth;canvas.height=originalHeight;
+    audio.currentTime=Math.min(oldTime,duration());paint(audio.currentTime);setExportLock(false);
     try{await wakeLock?.release()}catch{}
   }
 }
-$('exportBtn').onclick=exportVideo;
+$('exportBtn').onclick=()=>{if(loading||mixing||exporting)return;if(!audioFile){status('Upload audio before exporting.',true);return}updateExportEstimate();$('exportDialog').showModal()};
+$('startExport').onclick=exportVideo;
 $('cancelExport').onclick=()=>cancelExport('Export cancelled. Your project is unchanged.');
 document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelExport('Export cancelled because the tab was hidden. Keep it visible during export.')});
 window.addEventListener('beforeunload',e=>{if(dirty||audioFile||cues.length){e.preventDefault();e.returnValue=''}});
