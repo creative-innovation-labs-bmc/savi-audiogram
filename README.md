@@ -1,5 +1,5 @@
-# savi-audiogram
+# SAVI Audiogram Studio
 
-Published SAVI audio-to-video studio. Website assets only; development source is maintained separately.
+Published website assets for the SAVI audio-to-video editor.
 
-Created by the private repository factory. See `PROJECT_BRIEF.md` for the build requirements.
+The app processes audio and captions in the browser. Upload a podcast and SRT, then add background audio with independent volume, mute, offset and loop controls. Save your project to retain all tracks.
