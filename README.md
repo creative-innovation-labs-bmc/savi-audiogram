@@ -1,4 +1,4 @@
-# SAVI Audiogram Studio
+# Soundframe
 
 Published website assets for the SAVI audio-to-video editor.
 
@@ -11,3 +11,7 @@ Independent frequency bands drive the waveform contour from the mixed audio. The
 ## Export settings
 
 Export video opens resolution (540/720/1080), video quality and audio bitrate (128–320 kbps) controls, with approximate output size. Output preserves the canvas aspect ratio. Automatic format prefers H.264/AAC MP4; if unavailable, it uses WebM/Opus. Explicit MP4 is disabled when AAC recording is unavailable. The browser may produce a smaller file than the target bitrate suggests. Save the project before refreshing. Lowering export quality does not repair distortion in source recordings.
+
+## Soundframe branding
+
+Soundframe · Turn sound into stories. The app icon is an SVG frame containing three audio bars, shared by the header and favicon. SAVI remains the supplied episode template. The existing repository and live URL remain compatible with existing bookmarks.
